@@ -1,0 +1,393 @@
+[gd_scene format=4 uid="uid://dvuldh13ug7dq"]
+
+[ext_resource type="Texture2D" uid="uid://twqfgnh7qaqa" path="res://Sprites/Environment/Background/mountains/mountains 5.png" id="3_mehpj"]
+[ext_resource type="Texture2D" uid="uid://dkt112e3glbkw" path="res://Sprites/Environment/Background/mountains/mountains 4.png" id="4_47rsq"]
+[ext_resource type="Texture2D" uid="uid://crypk8eftiotc" path="res://Sprites/Environment/Background/mountains/mountains 3.png" id="5_rxgif"]
+[ext_resource type="Texture2D" uid="uid://cl2vishpu7n0p" path="res://Sprites/128x128.png" id="6_4okes"]
+[ext_resource type="Texture2D" uid="uid://cjyu0ty084h27" path="res://Sprites/Environment/Background/mountains/mountains 2.png" id="7_4io8s"]
+[ext_resource type="PackedScene" uid="uid://b6id5o8re3byg" path="res://Scenes/Enviroment/Assets/cloud.tscn" id="7_f5mmr"]
+[ext_resource type="Texture2D" uid="uid://cuuy6igvsktfl" path="res://Sprites/Environment/Background/mountains/mountains 1.png" id="8_4jxrg"]
+[ext_resource type="Texture2D" uid="uid://dsih1mrfe85xd" path="res://Sprites/Environment/Background/trees/ThickTree.png" id="8_4xo07"]
+[ext_resource type="Script" uid="uid://c6kxvfqr4ewu1" path="res://addons/rmsmartshape/shapes/shape_closed.gd" id="9_yx6o2"]
+[ext_resource type="Script" uid="uid://bwcf4pjgprn0k" path="res://addons/rmsmartshape/shapes/point.gd" id="10_7ovf1"]
+[ext_resource type="Script" uid="uid://bo5f7qe27jfje" path="res://addons/rmsmartshape/shapes/point_array.gd" id="11_b7x8n"]
+[ext_resource type="Script" uid="uid://llobjh5hvry" path="res://addons/rmsmartshape/shapes/mesh.gd" id="12_c6i71"]
+[ext_resource type="Script" uid="uid://0lhxan4cqrc1" path="res://addons/rmsmartshape/materials/edge_material_metadata.gd" id="13_qiqam"]
+[ext_resource type="Script" uid="uid://nc5bfedvnpgm" path="res://addons/rmsmartshape/materials/shape_material.gd" id="14_o0hmj"]
+[ext_resource type="PackedScene" uid="uid://dleictie07akm" path="res://Scenes/Player/birb.tscn" id="15_j1cva"]
+[ext_resource type="PackedScene" uid="uid://bsx08wurvjo7w" path="res://Scenes/Player/UI/feather_bar.tscn" id="16_w2r3l"]
+
+[sub_resource type="Environment" id="Environment_8ull8"]
+background_mode = 3
+ambient_light_source = 1
+reflected_light_source = 1
+glow_enabled = true
+glow_intensity = 0.17
+glow_strength = 0.93
+glow_bloom = 0.43
+glow_hdr_threshold = 0.88
+
+[sub_resource type="Shader" id="Shader_yb6ha"]
+code = "shader_type canvas_item;
+
+uniform vec2 scale; // Used for sprite script. Don't edit this value in the inspector.
+uniform float zoom; // Used for sprite script. Don't edit this value in the inspector.
+
+uniform sampler2D refraction_map;
+uniform sampler2D water_mask;
+
+uniform vec2 gap_stretch = vec2(0.8, 0.05);
+uniform vec2 refraction_stretch = vec2(2.0, 0.8);
+uniform float refraction_strength : hint_range(0.0, 0.1) = 0.02;
+
+uniform vec4 water_tint : source_color = vec4(0.2, 0.6, 1.0, 0.1);
+uniform vec4 water_highlight : source_color = vec4(1.0, 1.0, 1.0, 0.3);
+uniform float speed = 1.0;
+uniform float flow_gaps : hint_range(0.0, 1.0) = 0.33;
+uniform float highlight_width : hint_range(0.0, 0.3) = 0.02;
+uniform sampler2D screen_texture : hint_screen_texture;
+void fragment()
+{
+	// Get the two noise textures and make them move on the y axis. The gaps move twice as fast as the refraction, but you can tweak this by changing (speed * 0.5)
+	vec2 refraction_offset = texture(refraction_map, vec2(UV.x, UV.y + -TIME * speed * 0.5) * scale * refraction_stretch).xy;
+	vec2 gap_mask = texture(water_mask, vec2(UV.x, UV.y + -TIME * speed) * scale * gap_stretch).xy;
+	
+	// Set values between -0.5 and 0.5 (instead of 0 and 1). Otherwise the reflection will move whith increased refraction_strength
+	refraction_offset -= 0.5; 
+	
+	// Get the screen texture and distort it
+	vec4 refraction = texture(	a, SCREEN_UV - refraction_offset * refraction_strength * zoom);
+	
+	
+	// Create holes and apply colors and textures //
+	
+	vec4 color = vec4(1.0);
+	
+	// Define what values will be the water highlight color (the gap border)
+	float inner_edge = flow_gaps + highlight_width;
+	
+	// See if the pixel is within the edges range and use the water colors alpha to blend between showing color or refraction texture.
+	if (gap_mask.x < inner_edge)
+	{
+		color.rgb = mix(refraction.rgb, water_highlight.rgb, water_highlight.a);
+	}
+	else
+	{
+		color.rgb = mix(refraction.rgb, water_tint.rgb, water_tint.a);
+	}
+	
+	// If the value is below the gap threshhold make it transparent (a gap)
+	if (gap_mask.x < flow_gaps)
+	{
+		color.a = 0.0;
+	}
+	
+	
+	// Crate Edge Shape //
+	
+	// Set the shape for the top and bottom edges. Use water_mask as shape but with other values to flatten it out horizontally. 
+	vec2 water_edge = texture(water_mask, vec2(UV.x, UV.y + -TIME * 0.1) * scale * vec2(0.15, 0.6)).xy;
+	water_edge -= 0.5;
+	
+	// Use the same mask as for the gaps for left and right edge.
+	vec2 vertical_edge_mask = gap_mask - 0.5;
+	
+	// Apply the new masks to the edges. This will make the wobble effect.
+	color.a = mix(0.0, color.a, step(UV.x + vertical_edge_mask.x * 0.2, 0.92)); // Right edge
+	color.a = mix(color.a, 0.0, step(UV.x - vertical_edge_mask.x * 0.2, 0.08)); // Left edge
+	
+	color.a = mix(0.0, color.a, step(UV.y + water_edge.y * 0.1, 0.95));  //Bottom edge
+	color.a = mix(color.a, 0.0, step(UV.y - water_edge.y * 0.05, 0.05)); //Top edge
+	
+	COLOR = color;
+}"
+
+[sub_resource type="ShaderMaterial" id="ShaderMaterial_h8cc6"]
+shader = SubResource("Shader_yb6ha")
+
+[sub_resource type="Resource" id="Resource_dj7ni"]
+script = ExtResource("10_7ovf1")
+position = Vector2(328.18884, -117.55771)
+point_in = Vector2(-231.54303, -78.125916)
+point_out = Vector2(231.54303, 78.125916)
+
+[sub_resource type="Resource" id="Resource_1smin"]
+script = ExtResource("10_7ovf1")
+position = Vector2(-355.9721, 13.831207)
+point_in = Vector2(-273.04333, 225.96692)
+point_out = Vector2(273.04333, -225.96692)
+width = 2.1
+
+[sub_resource type="Resource" id="Resource_ufv2d"]
+script = ExtResource("10_7ovf1")
+position = Vector2(-469.57867, 734.52844)
+
+[sub_resource type="Resource" id="Resource_inyqu"]
+script = ExtResource("10_7ovf1")
+position = Vector2(328.18884, -117.55771)
+point_in = Vector2(-231.54303, -78.125916)
+point_out = Vector2(231.54303, 78.125916)
+
+[sub_resource type="Resource" id="Resource_0d2us"]
+script = ExtResource("10_7ovf1")
+position = Vector2(1535.7383, 1170.2946)
+point_in = Vector2(1173.7727, 51.784058)
+point_out = Vector2(-1173.7727, -51.784058)
+
+[sub_resource type="Resource" id="Resource_ommq7"]
+script = ExtResource("10_7ovf1")
+position = Vector2(2971.2573, 38.187805)
+point_in = Vector2(-411.13428, -69.04547)
+point_out = Vector2(411.13428, 69.04547)
+
+[sub_resource type="Resource" id="Resource_oft41"]
+script = ExtResource("10_7ovf1")
+position = Vector2(1467.5236, 293.65405)
+point_in = Vector2(-918.6802, 23.389526)
+point_out = Vector2(918.68024, -23.389526)
+width = 2.6
+
+[sub_resource type="Resource" id="Resource_8ull8"]
+script = ExtResource("10_7ovf1")
+position = Vector2(7736.537, 1325.2045)
+point_in = Vector2(21.969238, -495.8719)
+point_out = Vector2(-21.969238, 495.8719)
+
+[sub_resource type="Resource" id="Resource_7v3tv"]
+script = ExtResource("10_7ovf1")
+position = Vector2(5126.1445, 269.84827)
+point_in = Vector2(-1189.2668, 309.68774)
+point_out = Vector2(1189.2668, -309.68774)
+texture_idx = 1
+
+[sub_resource type="Resource" id="Resource_k1pye"]
+script = ExtResource("10_7ovf1")
+position = Vector2(7715.2314, -484.6255)
+point_in = Vector2(-577.95996, -48.841797)
+point_out = Vector2(577.95996, 48.841797)
+
+[sub_resource type="Resource" id="Resource_v5dhg"]
+script = ExtResource("11_b7x8n")
+_points = {
+0: SubResource("Resource_dj7ni"),
+1: SubResource("Resource_1smin"),
+3: SubResource("Resource_ufv2d"),
+7: SubResource("Resource_inyqu"),
+9: SubResource("Resource_0d2us"),
+10: SubResource("Resource_ommq7"),
+11: SubResource("Resource_oft41"),
+13: SubResource("Resource_8ull8"),
+14: SubResource("Resource_7v3tv"),
+15: SubResource("Resource_k1pye")
+}
+_point_order = PackedInt32Array(7, 11, 10, 14, 15, 13, 9, 3, 1, 0)
+_constraints = {
+Vector2i(0, 7): 15
+}
+_next_key = 16
+tessellation_stages = 5
+tessellation_tolerance = 4.0
+
+[sub_resource type="ArrayMesh" id="ArrayMesh_7v3tv"]
+_surfaces = [{
+"aabb": AABB(-515.1666, -487.6036, 0, 8496.919, 2005.0814, 1e-05),
+"attribute_data": PackedByteArray("/////9Lx9sAicNa/0vH2wCJw1r//////6PzxwNLOzL/o/PHA0s7Mv/////+tw+jAmn+1v63D6MCaf7W//////weT18BeHXS/B5PXwF4ddL//////+DLFwKbKz774MsXApsrPvv////8Cz61AFSmBPwLPrUAVKYE//////1BhKUHSQO2+UGEpQdJA7b7/////SLExQYzCDb9IsTFBjMINv/////8SKTpBdDwZvxIpOkF0PBm//////7b2QkExKBe/tvZCQTEoF7//////PEhMQdifBb88SExB2J8Fv/////+kJFZBLrjFvqQkVkEuuMW+/////5aDYEHAqEK+loNgQcCoQr7/////az6XQQALvz9rPpdBAAu/P/////9Q0uxBKNmkP1DS7EEo2aQ//////20HJkIpay3AbQcmQilrLcD/////zkg4Qjb5hcDOSDhCNvmFwP////+VLkBCoPuRwJUuQEKg+5HA/////87XQ0KiJpTAztdDQqImlMD/////2lFHQghok8DaUUdCCGiTwP////8dJEhC+pySwB0kSEL6nJLA/////6TpSELOYpHApOlIQs5ikcD/////uaJJQm28j8C5oklCbbyPwP////+nT0pCv6yNwKdPSkK/rI3A/////77wSkKsNovAvvBKQqw2i8D/////R4ZLQh9diMBHhktCH12IwP////+QEExC/iKFwJAQTEL+IoXA/////+KPTEIyi4HA4o9MQjKLgcD/////jgRNQkgxe8COBE1CSDF7wP/////dbk1CeZxywN1uTUJ5nHLA/////xzPTULJXWnAHM9NQsldacD/////lyVOQgh7X8CXJU5CCHtfwP////9ytk5CmOBJwHK2TkKY4EnA/////9AjT0K0+zHA0CNPQrT7McD/////E3BPQuT6F8ATcE9C5PoXwP////+cnU9CXxn4v5ydT0JfGfi//////wSmT0IXiXy/BKZPQheJfL//////3K5OQjmnkz/crk5COaeTP/////8U5UhCnoT6QBTlSEKehPpA/////0z8R0KLhhhBTPxHQouGGEH/////ItdHQuRUG0Ei10dC5FQbQf////8veUdCH/EdQS95R0If8R1B/////xHkRkJtXCBBEeRGQm1cIEH/////ZBlGQgeYIkFkGUZCB5giQf/////JGkVCHqUkQckaRUIepSRB/////9npQ0LkhCZB2elDQuSEJkH/////dfdAQlXBKUF190BCVcEpQf/////G/ThCbk8uQcb9OEJuTy5B/////6WTLkJKjzBBpZMuQkqPMEH/////BjHpQdyDKEEGMelB3IMoQf////8AvcY/bSkFQQC9xj9tKQVB/////8hxmMAG1/NAyHGYwAbX80D/////uIIbwYX/zkC4ghvBhf/OQP////+E0mHB0mGdQITSYcHSYZ1A/////y5nZMGNLIlALmdkwY0siUD/////DlRmwcqJZkAOVGbByolmQP////9VhWfBb/UwQFWFZ8Fv9TBA/////wwdZ8GMKuw/DB1nwYwq7D//////8wlmwU4dsD/zCWbBTh2wP/////86PWTBNoppPzo9ZME2imk//////yCbYcH8AO0+IJthwfwA7T7/////Y/FfwUA0fD5j8V/BQDR8Pv/////nB17B4KAVPecHXsHgoBU9/////zPbW8HsQym+M9tbwexDKb7/////0GdZwehYt77QZ1nB6Fi3vv////9FqlbBy3AKv0WqVsHLcAq//////xyfU8FsVja/HJ9TwWxWNr//////s1VHwWLlpL+zVUfBYuWkv/////8p7jvBugPavynuO8G6A9q//////wx+NsHqge2/DH42weqB7b//////8zExwX2k/L/zMTHBfaT8v/////8NAyzBntcDwA0DLMGe1wPA/////4fqJsH0cgfAh+omwfRyB8D/////kuEhwSZGCcCS4SHBJkYJwP////9c4RzBGnMJwFzhHMEacwnA/////+bfEsHQYQXA5t8SwdBhBcD/////nK8IwWec+L+crwjBZ5z4v/////95frrAENn0vXl+usAQ2fS9/////5gEXUA0Iag/mARdQDQhqD//////CIaCP3CnvD8IhoI/cKe8P/////+iUahBGNn1P6JRqEEY2fU//////3C/0kHqo/Y/cL/SQeqj9j//////mAi8QVSBBkCYCLxBVIEGQP////9wsqy/kOe0P3CyrL+Q57Q//////6j1E8DqFaY/qPUTwOoVpj//////okBJwJBBkT+iQEnAkEGRP//////oFXfAtMJuP+gVd8C0wm4//////50oj8A22DI/nSiPwDbYMj//////K+efwJhi4T4r55/AmGLhPv////9/NK7AhO4oPn80rsCE7ig+/////+oz/MDGjt6/6jP8wMaO3r8="),
+"format": 34359742527,
+"index_count": 270,
+"index_data": PackedByteArray("AAABAAIAAgADAAQABQAGAAcABwAIAAkACQAKAAsACwAMAA0ADgAPABAAEAARABIAEgATABQAFAAVABYAFgAXABgAGAAZABoAGgAbABwAHAAdAB4AHgAfACAAIAAhACIAIgAjACQAJAAlACYAJgAnACgAKAApACoAKgArACwALAAtAC4ALgAvADAAMAAxADIAMgAzADQANAA1ADYANgA3ADgAOAA5ADoAOgA7ADwAPAA9AD4APgA/AEAAQABBAEIAQgBDAEQARABFAEYARgBHAEgASABJAEoASgBLAEwAAAACAAQABQAHAAkACQALAA0ADgAQABIAEgAUABYAFgAYABoAGgAcAB4AHgAgACIAIgAkACYAJgAoACoAKgAsAC4ALgAwADIAMgA0ADYANgA4ADoAOgA8AD4APgBAAEIAQgBEAEYARgBIAEoAAAAEAE0ABQAJAA0ADgASABYAFgAaAB4AHgAiACYAJgAqAC4ALgAyADYANgA6AD4APgBCAEYARgBKAEwATgAFAA0ADgAWAB4AHgAmAC4ALgA2AD4APgBGAEwATwBOAA0ADgAeAC4ATwANAFAAUQAOAC4ATwBQAFIAUgBRAC4AUwBPAFIAUwBSAC4AVABTAC4AVAAuAD4AVQBUAD4AVgBVAD4AVwBWAD4AWABXAD4AWQBYAD4ATQBZAD4AAABNAD4AAAA+AEwATABaAFoAWgAAAEwA"),
+"primitive": 3,
+"uv_scale": Vector4(0, 0, 0, 0),
+"vertex_count": 91,
+"vertex_data": PackedByteArray("W5yuQ0Pg2sIAAAAAL4a4Q6Sdx8IAAAAApvjKQzP/mMIAAAAA8lntQ3Z1iMEAAAAACA0JRFo1VEIAAAAAgQf+RBUpakMAAAAAqEAoRS6/NkIAAAAApGgsRed6CEIAAAAAiaQwRTIO40EAAAAAWws1RT1f60EAAAAAHrQ5RVDAGEIAAAAAUqI+RdJHXkIAAAAAy9FDRdBVoUIAAAAAa85qRYAFlEMAAAAAKDGgRZTshkMAAAAAbc/PRVLWccMAAAAAzhDiRW1y18MAAAAAlfbpRUF378MAAAAAzp/tRUPN88MAAAAA2hnxRRBQ8sMAAAAAHezxRfW58MMAAAAApLHyRZ1F7sMAAAAAuWrzRdr46sMAAAAApxf0RX7Z5sMAAAAAvrj0RVnt4cMAAAAAR071RT463MMAAAAAkNj1RfzF1cMAAAAA4lf2RWSWzsMAAAAAjsz2RUixxsMAAAAA3Tb3RXkcvsMAAAAAHJf3RcndtMMAAAAAl+33RQj7qsMAAAAAcn74RZhglcMAAAAA0Ov4RWf3esMAAAAAEzj5Rcn1RsMAAAAAnGX5RV8ZD8MAAAAABG75RVwkqsEAAAAA3Hb4RTmnfEMAAAAAFK3yRU9iikQAAAAATMTxRYumpUQAAAAAIp/xReR0qEQAAAAAL0HxRR8Rq0QAAAAAEazwRW18rUQAAAAAZOHvRQe4r0QAAAAAyeLuRR7FsUQAAAAA2bHtReSks0QAAAAAdb/qRVXhtkQAAAAAxsXiRW5vu0QAAAAApVvYRUqvvUQAAAAAg2CeRdyjtUQAAAAAoPe/RG1JkkQAAAAAOM41RIMLh0QAAAAAf9S5QoU/aUQAAAAAEsrqw9KhN0QAAAAAuBz1w41sI0QAAAAAOND8w+WEDUQAAAAAqsoAxG915UMAAAAAL/T/w0aVqkMAAAAAzaf7w6eOjEMAAAAA6HT0wxvFXUMAAAAAgOzpwz9AJEMAAAAAjUXjw4iGCEMAAAAAnJ/bww5a20IAAAAAzOzSwwWvp0IAAAAAPx/JwxinbEIAAAAAFSm+w2oeD0IAAAAAbvyxw6BMXUEAAAAAzdaAw4aVb8IAAAAAS3Emw3UH4sIAAAAAx+D1wuqBBMMAAAAANB+hwn2kE8MAAAAAlGEcwjuvHsMAAAAAwOLVP+jlJcMAAAAAwc0nQk2MKcMAAAAASOqjQjTmKcMAAAAA0gAiQ6DDIcMAAAAAHoNzQ2ecD8MAAAAAh8ETRN5ks0IAAAAAJmHeRJqQiEMAAAAAwXC3RLjTkkMAAAAAouF7RYxsr0MAAAAAuCeTRfXRr0MAAAAATMyHRVQBu0MAAAAAsomRRMjzjkMAAAAAliKCRPWKh0MAAAAAr59pRJBBekMAAAAADLVSRFphYEMAAAAAYxc/RBtsQkMAAAAA1VguRKZYIUMAAAAAgQsgRKE7/EIAAAAALBikQ4wd68IAAAAA//////7//7///////v//v/////////+///////7//7///////v//v/////////+//////////7///////v//v/////////+//////////7//////////v/////////+//////////7//////////v/////////+//////////7//////////v//////+//+//////////7//////////v//////+//+///////7//7///////v//v//////+//+///////7//7///////v//v/////////+//////////7//////////v/////////+//////////7//////////v//////+//+///////7//7//////////v//////+//+///////7//7//////////v/////////+//////////7//////////v/////////+//////////7//////////v/////////+//////////7//////////v/////////+//////////7//////////v/////////+//////////7//////////v/////////+//////////7//////////v/////////+//////////7//////////v/////////+//////////7//////////v/////////+//////////7//////////v/////////+//////////7///////v//v//////+//+///////7//7//////////v//////+//+//////////7///////v//v/////////+//////////7//////////v/////////+//////////7//////////v/////////+//////////7//////////v/////////+//////////7//////////v/////////+//////////7//////////v/////////+///////7//78=")
+}]
+
+[sub_resource type="Resource" id="Resource_5ldct"]
+script = ExtResource("12_c6i71")
+texture = ExtResource("6_4okes")
+mesh = SubResource("ArrayMesh_7v3tv")
+
+[sub_resource type="Resource" id="Resource_e5jpy"]
+script = ExtResource("14_o0hmj")
+fill_textures = Array[Texture2D]([ExtResource("6_4okes")])
+fill_texture_z_index = 0
+fill_texture_absolute_position = true
+metadata/_custom_type_script = "uid://nc5bfedvnpgm"
+
+[node name="Level" type="Node2D" unique_id=1695368382]
+
+[node name="WorldEnvironment" type="WorldEnvironment" parent="." unique_id=1147220530]
+environment = SubResource("Environment_8ull8")
+
+[node name="Background" type="Node2D" parent="." unique_id=1847407750]
+
+[node name="0_1" type="Parallax2D" parent="Background" unique_id=1241737902]
+z_index = -2
+scroll_scale = Vector2(0.1, 1)
+scroll_offset = Vector2(-873, -523)
+repeat_size = Vector2(7642.93, 0)
+
+[node name="0_2" type="Parallax2D" parent="Background" unique_id=691963422]
+z_index = -2
+scroll_scale = Vector2(0.2, 1)
+repeat_size = Vector2(7642.93, 0)
+
+[node name="Mountains5" type="Sprite2D" parent="Background/0_2" unique_id=1334610402]
+position = Vector2(828, 59)
+scale = Vector2(2, 2)
+texture = ExtResource("3_mehpj")
+
+[node name="0_3" type="Parallax2D" parent="Background" unique_id=1829543318]
+z_index = -2
+scroll_scale = Vector2(0.3, 1)
+repeat_size = Vector2(7642.93, 0)
+
+[node name="Mountains4" type="Sprite2D" parent="Background/0_3" unique_id=1079100005]
+position = Vector2(828, 59)
+scale = Vector2(2, 2)
+texture = ExtResource("4_47rsq")
+
+[node name="0_4" type="Parallax2D" parent="Background" unique_id=567635801]
+z_index = -2
+scroll_scale = Vector2(0.4, 1)
+repeat_size = Vector2(7642.93, 0)
+
+[node name="Mountains3" type="Sprite2D" parent="Background/0_4" unique_id=653764780]
+position = Vector2(828, 59)
+scale = Vector2(2, 2)
+texture = ExtResource("5_rxgif")
+
+[node name="Waterfall3" type="Sprite2D" parent="Background/0_4" unique_id=2143457066]
+modulate = Color(0.5349422, 0.9658981, 0.99999994, 0.39215687)
+material = SubResource("ShaderMaterial_h8cc6")
+position = Vector2(1768.3126, 54)
+scale = Vector2(0.32324192, 10.707032)
+texture = ExtResource("6_4okes")
+
+[node name="Waterfall4" type="Sprite2D" parent="Background/0_4" unique_id=191508828]
+modulate = Color(0.5349422, 0.9658981, 0.99999994, 0.39215687)
+material = SubResource("ShaderMaterial_h8cc6")
+position = Vector2(-262.18747, 349.99997)
+scale = Vector2(0.28417948, 10.707032)
+texture = ExtResource("6_4okes")
+
+[node name="0_5" type="Parallax2D" parent="Background" unique_id=920269048]
+z_index = -2
+scroll_scale = Vector2(0.5, 1)
+scroll_offset = Vector2(-873, -523)
+repeat_size = Vector2(7642.93, 0)
+
+[node name="0_6" type="Parallax2D" parent="Background" unique_id=718213971]
+z_index = -2
+scroll_scale = Vector2(0.6, 1)
+repeat_size = Vector2(7642.93, 0)
+
+[node name="Mountains2" type="Sprite2D" parent="Background/0_6" unique_id=1539470857]
+position = Vector2(828, 59)
+scale = Vector2(2, 2)
+texture = ExtResource("7_4io8s")
+
+[node name="Waterfall2" type="Sprite2D" parent="Background/0_6" unique_id=306736830]
+modulate = Color(0.58182186, 0.9582545, 0.99999994, 0.78039217)
+material = SubResource("ShaderMaterial_h8cc6")
+position = Vector2(1087, 195)
+scale = Vector2(0.635743, 10.707032)
+texture = ExtResource("6_4okes")
+
+[node name="0_7" type="Parallax2D" parent="Background" unique_id=226750063]
+z_index = -2
+scroll_scale = Vector2(0.7, 1)
+scroll_offset = Vector2(-873, -523)
+repeat_size = Vector2(7642.93, 0)
+
+[node name="0_8" type="Parallax2D" parent="Background" unique_id=882591610]
+z_index = -2
+scroll_scale = Vector2(0.8, 1)
+scroll_offset = Vector2(-873, -523)
+repeat_size = Vector2(7642.93, 0)
+
+[node name="Mountains1" type="Sprite2D" parent="Background/0_8" unique_id=1533149097]
+position = Vector2(1728, 536)
+scale = Vector2(2, 2)
+texture = ExtResource("8_4jxrg")
+
+[node name="Waterfall" type="Sprite2D" parent="Background/0_8" unique_id=2094894424]
+modulate = Color(0.69598776, 0.9315498, 0.9999998, 1)
+material = SubResource("ShaderMaterial_h8cc6")
+position = Vector2(-85, 1317)
+scale = Vector2(1.2714844, 10.707032)
+texture = ExtResource("6_4okes")
+
+[node name="0_9" type="Parallax2D" parent="Background" unique_id=634980992]
+z_index = -2
+scroll_scale = Vector2(0.9, 1)
+scroll_offset = Vector2(-873, -523)
+repeat_size = Vector2(7642.93, 0)
+
+[node name="Cloud" parent="Background/0_9" unique_id=2064404371 instance=ExtResource("7_f5mmr")]
+position = Vector2(2204, -956)
+
+[node name="ThickTree" type="Sprite2D" parent="Background" unique_id=1966349935]
+position = Vector2(705, 0)
+texture = ExtResource("8_4xo07")
+
+[node name="Ground" type="StaticBody2D" parent="." unique_id=990357180]
+position = Vector2(-498, 323)
+
+[node name="Ground" type="Node2D" parent="Ground" unique_id=67239051]
+modulate = Color(0.42323712, 0.6055984, 0.22437876, 1)
+position = Vector2(-839, -428)
+script = ExtResource("9_yx6o2")
+_points = SubResource("Resource_v5dhg")
+_meshes = Array[ExtResource("12_c6i71")]([SubResource("Resource_5ldct")])
+shape_material = SubResource("Resource_e5jpy")
+tessellation_stages = 5
+tessellation_tolerence = 4.0
+collision_polygon_node_path = NodePath("../CollisionPolygon2D2")
+metadata/_custom_type_script = "uid://c6kxvfqr4ewu1"
+
+[node name="CollisionPolygon2D2" type="CollisionPolygon2D" parent="Ground" unique_id=1500826660]
+visible = false
+polygon = PackedVector2Array(-510.81116, -545.55774, -489.77847, -537.438, -469.9517, -527.80786, -433.05743, -504.49844, -364.2973, -445.05734, -290.7964, -374.9479, -247.97614, -338.30298, -198.82025, -301.88354, -141.612, -266.65372, -74.63458, -233.57771, 3.8288574, -203.61972, 95.495056, -177.7439, 202.08081, -156.9144, 325.30298, -142.09546, 628.52356, -134.34595, 940.0359, -154.8703, 1193.2345, -193.83952, 1853.041, -382.3133, 1919.54, -393.87997, 1987.2834, -399.61807, 2057.7097, -398.5785, 2132.2573, -389.8122, 2211.145, -372.42987, 2294.112, -347.3324, 2917.9011, -131.95703, 3191.102, -77.15198, 3506.537, -53.989624, 3869.9648, -76.35971, 4287.1445, -158.15173, 5810.928, -669.83716, 6395.1006, -858.8939, 6647.8228, -906.93164, 6764.9756, -915.60364, 6876.2314, -912.6255, 6902.514, -909.45276, 6927.205, -904.5438, 6950.3403, -897.94415, 6971.9565, -889.69916, 6992.093, -879.85425, 7010.7847, -868.455, 7028.0703, -855.54675, 7043.9854, -841.1749, 7058.5693, -825.385, 7071.858, -808.2224, 7083.8887, -789.73267, 7094.6987, -769.9612, 7112.8057, -726.75464, 7126.4766, -678.96643, 7136.0093, -626.9601, 7141.701, -571.0991, 7142.752, -449.26776, 7111.8574, -175.34679, 6926.635, 679.07214, 6897.537, 897.20447, 6892.8916, 919.65283, 6881.148, 940.53503, 6862.5083, 959.8883, 6837.174, 977.75085, 6805.348, 994.1599, 6767.231, 1009.15283, 6672.932, 1035.0416, 6417.7217, 1071.4822, 6084.4556, 1089.4778, 4229.064, 1025.1206, 696.7383, 742.29456, -111.77783, 652.35974, -746.08496, 504.9925, -1308.5786, 306.52844, -1329.2244, 225.6961, -1344.6267, 138.07648, -1354.1666, 30.91745, -1350.9077, -86.8338, -1342.3109, -146.88553, -1327.9133, -206.23006, -1306.8477, -263.74902, -1293.5433, -291.4745, -1278.247, -318.3241, -1260.85, -344.15817, -1241.2441, -368.83682, -1219.3209, -392.2203, -1194.9722, -414.1688, -1096.6781, -487.89603, -1005.44257, -541.0146, -961.939, -560.50745, -919.5609, -575.6425, -878.0953, -586.6845, -837.32904, -593.8981, -797.0491, -597.54803, -757.0424, -597.89923, -676.9968, -589.76416, -595.4878, -571.61096)
+
+[node name="Birb" parent="." unique_id=982056114 node_paths=PackedStringArray("flap_bars") instance=ExtResource("15_j1cva")]
+position = Vector2(-60, -561)
+wall_min_slide_angle = 0.0
+platform_on_leave = 2
+flap_bars = [NodePath("../UI/GameUI/FeatherBar"), NodePath("../UI/GameUI/FeatherBar2"), NodePath("../UI/GameUI/FeatherBar3")]
+
+[node name="UI" type="CanvasLayer" parent="." unique_id=1789192704]
+
+[node name="GameUI" type="Control" parent="UI" unique_id=1869196115]
+custom_minimum_size = Vector2(0, 8.62)
+layout_mode = 3
+anchors_preset = 15
+anchor_right = 1.0
+anchor_bottom = 1.0
+offset_top = -4.31
+offset_bottom = 4.3100586
+grow_horizontal = 2
+grow_vertical = 2
+
+[node name="FeatherBar" parent="UI/GameUI" unique_id=566884333 instance=ExtResource("16_w2r3l")]
+layout_mode = 0
+offset_left = -39.0
+offset_top = 117.55502
+offset_right = 921.0
+offset_bottom = 657.55505
+rotation = -0.6898321
+
+[node name="FeatherBar2" parent="UI/GameUI" unique_id=1588060996 instance=ExtResource("16_w2r3l")]
+layout_mode = 0
+offset_left = 46.999996
+offset_top = 118.01961
+offset_right = 1007.0
+offset_bottom = 658.0196
+rotation = -0.6898321
+
+[node name="FeatherBar3" parent="UI/GameUI" unique_id=158887248 instance=ExtResource("16_w2r3l")]
+layout_mode = 0
+offset_left = 135.0
+offset_top = 118.01961
+offset_right = 1095.0
+offset_bottom = 658.0196
+rotation = -0.6898321

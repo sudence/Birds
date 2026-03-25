@@ -1,0 +1,8 @@
+[gd_scene format=3 uid="uid://b6id5o8re3byg"]
+
+[ext_resource type="Texture2D" uid="uid://d0cqrm0iv00dh" path="res://Sprites/Environment/Clouds/Cloud_1.png" id="1_l6yrv"]
+[ext_resource type="Script" uid="uid://ctjysrggdueew" path="res://Scripts/Misc/sprite_adjuster.gd" id="2_7nao1"]
+
+[node name="Cloud" type="Sprite2D" unique_id=2064404371]
+texture = ExtResource("1_l6yrv")
+script = ExtResource("2_7nao1")
