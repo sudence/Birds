@@ -75,7 +75,7 @@ func _physics_process(delta: float) -> void:
 		if !is_on_floor():
 			velocity.y += gravity * delta
 		else:
-			velocity.y = 0
+			velocity.move_toward( Vector2.ZERO, drag * delta)
 	
 	move_and_slide();
 	
